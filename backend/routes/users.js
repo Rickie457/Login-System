@@ -18,7 +18,7 @@ const mailFunction = (email, token) => {
         subject: 'Password Reset',
         html: `
             <p>You have requested to reset your password. Please follow the link below to reset your password:</p>
-            <a href="http://localhost:5000/reset-password/${token}">Reset Password</a>
+            <a href="http://localhost:3000/reset-password/${token}">Reset Password</a>
             `
     }
     return mailOptions;
@@ -52,8 +52,8 @@ router.route('/register').post((req, res) => {
     });
     // Saves it to the DB.
     newUser.save()
-        .then(() => res.json('User registered!'))
-        .catch(err => res.status(400).json('Error ' + err));
+        .then(() => res.status(200).json({status: "Success", user: true}))
+        .catch(err => res.status(400).json({status: "Error", user: false}));
 });
 
 router.route('/login').post( async (req, res) => {
@@ -62,7 +62,7 @@ router.route('/login').post( async (req, res) => {
         password: req.body.password,
     })
     if (user) {
-        return res.json({status: 'Success', user: true})
+        return res.json({status: 'Success', user: true, username: user.username})
     } else {
         return res.json({status: 'Error', user: false})
     }
@@ -71,13 +71,13 @@ router.route('/login').post( async (req, res) => {
 router.route('/:id').get((req, res) => {
     User.findById(req.params.id)
         .then(users => res.json(users))
-        .catch(err => res.status(400).json('Error: ' + err));
+        .catch(err => res.status(400).json({status: "Error", user: false}));
 });
 
 router.route('/:id').delete((req, res) => {
     User.findByIdAndDelete(req.params.id)
     .then(() => res.json('User deleted'))
-    .catch(err => res.status(400).json('Error ' + err));
+    .catch(err => res.status(400).json({status: "Error", user: false}));
 });
 
 router.route('/forgot-password').post( async(req, res) => {
@@ -94,12 +94,12 @@ router.route('/forgot-password').post( async(req, res) => {
         const resetToken = new Reset({
             token: token,
             expiry: Date.now() + 3600000, // 1 hour expiry
+            email: email,
         });
         // Save the reset token into DB.
         resetToken.save()
             .then(() => {
                 // Send the email for reset
-                res.status(200).json('Reset token added!')
                 const mail = mailFunction(email, token);
                 transporter.sendMail(mail, (error, info) => {
                     if(error) {
@@ -108,23 +108,46 @@ router.route('/forgot-password').post( async(req, res) => {
                         console.log('Email sent: ' + info.response);
                     }
                 });
+                res.status(200).json({status: "Reset Token Added!", user: true})
             })
-            .catch(err => res.status(400).json('Error ' + err));
+            .catch(err => res.status(400).json({status: "Error", user: false}));
     } else {
-        return res.status(400).json({ error: 'Invalid user' });
+        return res.status(400).json({status: "Error", user: false});
     }
 });
 
 router.route('/reset-password/:token').post( async(req, res) => {
+    const newPassword = req.body.newPassword;
     const token = req.body.token;
     const reset = await Reset.findOne({
         token: token,
         expiry: { $gt: Date.now() } // ensures the expiry date is still ahead of the current date
     });
     if(reset){
-        res.render('reset-password', { token });
+        const email = reset.email;
+        const token = reset.token;
+        const user = User.findOne({
+            email: email
+        });
+        if(user){
+            User.updateOne({
+                email: email
+            }, {
+                password: newPassword
+            })
+            .then(() => {
+                Reset.deleteOne({
+                    token: token
+                })
+                .then(() => res.status(200).json({status: "Success", user: true}))
+                .catch(err => res.status(400).json({status: "Error", user: false}));
+            })
+            .catch(err => res.status(400).json({status: "Error", user: false}));
+        } else {
+            return res.status(400).json({error: 'Email not found', user: false})
+        }
     } else {
-        return res.status(400).json({error: 'Invalid or expired token'})
+        return res.status(400).json({error: 'Invalid or expired token', user: false})
     }
 });
 

@@ -12,6 +12,12 @@ const resetSchema = new Schema({
         type: Date,
         required: true,
     },
+    email: {
+        type: String,
+        required: true,
+        unique: true,
+        trim: true,
+    },
 })
 
 const Reset = mongoose.model('Reset', resetSchema);
